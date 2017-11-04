@@ -215,7 +215,7 @@ def get_encoding(auto, raw):
     return result['encoding']
 
 
-def read_file_contents(file_obj, ignore_data=False):
+def read_file_contents(file_obj, ignore_data=False, **kwargs):
     '''Read file contents into memory.
 
     Arguments:
@@ -225,6 +225,7 @@ def read_file_contents(file_obj, ignore_data=False):
         null_subs (bool): True will substitute ``numpy.nan`` for invalid values
         ignore_data (bool): if True, do not read in the numerical data in the
             ~ASCII section
+        **kwargs: sent to :func:`read_data_section_iterative`
 
     Returns:
         OrderedDict
@@ -267,7 +268,7 @@ def read_file_contents(file_obj, ignore_data=False):
                 "line_nos": sect_line_nos,
                 }
             if not ignore_data:
-                data = read_data_section_iterative(file_obj, i + 1)
+                data = read_data_section_iterative(file_obj, i + 1, **kwargs)
                 sections[line] = {
                     "section_type": "data",
                     "start_line": i,
@@ -315,7 +316,7 @@ def read_file_contents(file_obj, ignore_data=False):
     return sections
 
 
-def read_data_section_iterative(file_obj, i):
+def read_data_section_iterative(file_obj, i, use_pandas=None):
     '''Read data section into memory.
 
     Arguments:
@@ -327,14 +328,25 @@ def read_data_section_iterative(file_obj, i):
         A 1-D numpy ndarray.
 
     '''
-    def items(f):
-        for line in f:
-            for pattern, sub_str in defaults.SUB_PATTERNS:
-                line = re.sub(pattern, sub_str, line)
-            for item in line.split():
-                yield item
+    if use_pandas is True:
+        try:
+            import pandas as pd
+            use_pandas = True
+        except ImportError:
+            logger.info('pandas not installed - using numpy.fromiter instead')
+            use_pandas = False
+    
+    if use_pandas:
+        return pd.read_csv(file_obj, delim_whitespace=True).values.reshape(-1)
+    else:
+        def items(f):
+            for line in f:
+                for pattern, sub_str in defaults.SUB_PATTERNS:
+                    line = re.sub(pattern, sub_str, line)
+                for item in line.split():
+                    yield item
 
-    return np.fromiter(items(file_obj), np.float64, -1)
+        return np.fromiter(items(file_obj), np.float64, -1)
 
 
 def parse_header_section(sectdict, version, ignore_header_errors=False):
